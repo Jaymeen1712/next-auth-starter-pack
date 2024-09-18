@@ -7,6 +7,14 @@ import { db } from "@/db";
 import { getUserByEmail } from "@/db/queries/user";
 import { SignUpFormSchema } from "@/schemas";
 
+const handleDeleteUser = async (id: string) => {
+  await db.user.delete({
+    where: {
+      id,
+    },
+  });
+};
+
 export const signUpAction = async (
   values: z.infer<typeof SignUpFormSchema>,
 ) => {
@@ -29,23 +37,39 @@ export const signUpAction = async (
   const hashedPassword = await bcrypt.hash(password, 10);
 
   try {
-    await db.user.create({
+    const createdUser = await db.user.create({
       data: {
         email,
         password: hashedPassword,
         name: `${first_name} ${last_name}`,
       },
     });
-  } catch (err: unknown) {
-    if (err instanceof Error) {
-      return {
-        error: err.message,
-      };
-    } else {
-      return {
-        error: "Failed to create user",
-      };
+
+    if (createdUser) {
+      try {
+        const { email, id, image, name, username } = createdUser;
+        await db.profile.create({
+          data: {
+            userId: id,
+            name,
+            username,
+            email,
+            lowResImage: image,
+          },
+        });
+      } catch (err) {
+        handleDeleteUser(createdUser.id);
+        console.error(err);
+        return {
+          error: "Failed to create user",
+        };
+      }
     }
+  } catch (err: unknown) {
+    console.error(err);
+    return {
+      error: "Failed to create user",
+    };
   }
 
   return {
